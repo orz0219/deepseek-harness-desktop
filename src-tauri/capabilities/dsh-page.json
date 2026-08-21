@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dsh-page",
+  "description": "Grant the main launcher window IPC access to the custom commands from both the local setup/error page and the injected dsh web page (a remote loopback origin). The archive commands are scoped to dsh's own on-disk storage and are the only commands the remote page may invoke.",
+  "windows": ["main"],
+  "local": true,
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    "allow-get-status",
+    "allow-select-dsh",
+    "allow-restart-dsh",
+    "allow-restore-archived-sessions",
+    "allow-delete-archived-sessions"
+  ]
+}

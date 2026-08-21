@@ -132,6 +132,27 @@ button {
 
 侧边栏里由 `src-tauri/src/main.rs` 的 `INJECT_JS` 注入，位于「搜索」图标按钮**左侧**。为避免之前带 1px 浅灰边框的幽灵样式过于突兀，改为与 dsh 原生图标按钮（搜索 / 添加）完全一致的样式：**28×28 圆形、无边框、透明底**，颜色用 dsh 的 `--dsw-alias-label-secondary`，hover / active 用 dsh 自带的 `--dsw-alias-interactive-bg-hover` / `-active` 变量（浅色 / 深色主题下都和原生按钮一致）。图标为归档盒（outline，`stroke=currentColor` 继承按钮颜色），明确表达「归档」语义而非「删除」。因是纯图标按钮，状态反馈改用 `title` 悬浮提示（含「可从归档区恢复」）+ 图标变红（`.armed` 类）表达「二次确认」，不再用文字。
 
+### 注入的「已归档会话」时钟图标按钮（归档按钮右侧）
+
+**外观与归档按钮完全同款**（28×28 圆形、无边框、透明底，同一组 `--dsw-alias-*` 变量 / hover / active），图标为**时钟 / 历史**（outline 圆 + 指针，`stroke=currentColor`），插在归档盒按钮**右侧**（`afterend`），用于打开「归档管理器」。因是纯图标按钮，提示用 `title`/`aria-label`：`已归档的会话（管理）`。
+
+### 归档管理器面板（时钟按钮打开的模态）
+
+点击时钟按钮弹出的会话管理面板，风格沿用 THEME token 的浅色冷调（与归档确认弹框同一家族，稍大一号）：
+
+| 部位 | 取值 |
+|---|---|
+| 遮罩 | `rgba(17,24,39,.35)`，与归档确认弹框一致 |
+| 卡片 | `#ffffff` 底、`1px solid #e5e7eb` 边框、圆角 `14px`、阴影 `0 12px 40px rgba(31,41,55,.18)`（符合「卡片阴影」token）、宽 `620px`、高 ≤ `76vh`，内部纵向布局 |
+| 标题 | `15px / 600`，`#1f2937`（对应 `.dsh-am-title`） |
+| 工具栏 | 全选复选框（`accent-color: #3b6cf6` 品牌蓝）+ 计数（`#6b7280`）+ 刷新幽灵小按钮（`#e5e7eb` 边框，hover 边框 `#374151`） |
+| 会话行 | hover `#f9fafb`；标题 `13px/500 #1f2937`；元信息（工作区）`11px #6b7280`；时间 `11px #9ca3af` 等宽数字；运行中行加蓝底徽章（`#e5edff` / `#1e40af`，对应 `starting` 徽章）并禁用勾选 |
+| 主操作 | 「撤销归档」（幽灵按钮：白底 + `#e5e7eb` 边框，hover 边框 `#374151`）；「物理删除」（危险按钮：白底 + `#fecaca` 边框 + `#b91c1c` 文字，hover `#fef2f2` 底 + `#b91c1c` 边框；禁用态 `#9ca3af`/`#fca5a5`）——红色只用语义红 `#b91c1c` 家族，不引入新色相 |
+| 状态条 | 成功 `#166534` / 失败 `#b91c1c`（对应 `ready` / `error` 徽章语义色） |
+| 危险确认弹框 | 复用归档确认卡片样式，确认键换为实心红 `#b91c1c` 白字（`hover: brightness(1.08)`） |
+
+> 面板内**撤销 / 物理删除**通过 Tauri 命令（`restore_archived_sessions` / `delete_archived_sessions`，capability `dsh-page` 授权本地页 + `http://127.0.0.1:*` 远端页）完成；不在启动器窗口内打开时列表仍可查看，操作按钮禁用并提示。
+
 ### 状态徽章（语义、浅色底 + 高对比文字）
 
 | 状态 | 背景 | 文字 |
@@ -158,6 +179,11 @@ button {
 |---|---|
 | `ui/index.html` | `:root` 定义全部 token；页面背景渐变光晕；卡片、状态徽章、输入框、主按钮 |
 | `src-tauri/src/main.rs` (`INJECT_JS`) | 注入的侧边栏「归档所有对话」按钮为**纯图标按钮（归档盒）**，样式与 dsh 原生图标按钮一致（28×28 圆形、无边框、透明底，颜色 / hover 复用 dsh 的 `--dsw-alias-*` 变量）；锚定到「搜索会话」图标按钮（`aria-label`），插入在其**左侧**（宽模式插到 searchSlot 前、折叠 rail 插到搜索框前） |
+| `src-tauri/src/main.rs` (`INJECT_JS`) | 归档盒按钮**右侧**注入**时钟图标按钮**（同款式样），点击打开「归档管理器」面板：已归档会话列表（`workspace.list` + `session.list`）、全选、勾选后「撤销归档」或「物理删除」（危险二次确认）。面板样式如上方「归档管理器面板」小节，全部使用 THEME token |
+| `src-tauri/capabilities/dsh-page.json` | capability（本地页 + `http://127.0.0.1:*` / `http://localhost:*` 远端页）授予 `get_status` / `select_dsh` / `restore_archived_sessions` / `delete_archived_sessions` 四个命令——远端 dsh 页面只有经授权的归档维护命令可用 |
+| `src-tauri/src/archive_ops.rs` | 归档维护核心（纯 Rust，无 Tauri 依赖）：编辑 `~/.dsh/storages/workspace.json`（原子写 + 一次性 `.bak`）、按需删除 `~/.dsh/sessions/*/session-<id>/` 目录；`cargo test --lib` 覆盖 |
+
+> 说明：dsh 的 RPC 面上没有「撤销归档 / 删除会话」方法（仅 `workspace.archiveSession`），且运行中的 dsh 会把归档集合缓存在内存里。因此本启动器直接、原子地修改 dsh 的持久化存储，并在**由启动器托管 dsh** 时触发一次自动重启生效（supervisor 的重启一次逻辑）；若 dsh 由外部程序启动（fast path），则提示用户手动重启并警告生效前勿再归档以免被覆盖。
 
 > Tauri 窗口未设 `backgroundColor`，webview 默认白底，与浅色主题一致，无需改动。
 

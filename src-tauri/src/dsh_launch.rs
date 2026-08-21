@@ -80,11 +80,11 @@ pub fn build_launch_plan(
     let node = resolve_node(settings, candidate);
 
     let (program, mut args) = match &node {
-        Some(node) => (node.clone(), vec![candidate.executable.to_string_lossy().into_owned()]),
-        None => (
-            candidate.executable.clone(),
-            Vec::new(),
+        Some(node) => (
+            node.clone(),
+            vec![candidate.executable.to_string_lossy().into_owned()],
         ),
+        None => (candidate.executable.clone(), Vec::new()),
     };
     args.push("web".into());
     args.push("--host".into());
@@ -170,12 +170,33 @@ pub fn settings_path(identifier: &str) -> PathBuf {
     settings_dir(identifier).join("settings.json")
 }
 
-/// Load settings, merging onto defaults. Missing file -> defaults.
+/// Load settings, merging onto defaults. Missing file -> defaults; corrupt
+/// file -> defaults plus an ERROR log line (never silently swallow).
 pub fn load_settings(path: &Path) -> AppSettings {
     match std::fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(settings) => settings,
+            Err(e) => {
+                crate::logging::error(&format!(
+                    "设置文件 {} 解析失败（{e}），已回退默认值；原文件保留未覆盖。",
+                    path.display()
+                ));
+                AppSettings::default()
+            }
+        },
         Err(_) => AppSettings::default(),
     }
+}
+
+/// Render a spawn-environment snapshot for diagnostics (PLAN 验收点 2), one
+/// `KEY=VALUE` per line, sorted by key.
+pub fn format_env_snapshot(env: &HashMap<String, String>) -> String {
+    let mut keys: Vec<&String> = env.keys().collect();
+    keys.sort();
+    keys.into_iter()
+        .map(|k| format!("{k}={}", env[k]))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Persist settings (creating the directory if needed).
@@ -183,9 +204,8 @@ pub fn save_settings(path: &Path, settings: &AppSettings) -> std::io::Result<()>
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(settings).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-    })?;
+    let json = serde_json::to_string_pretty(settings)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(path, json)
 }
 
@@ -300,5 +320,13 @@ mod tests {
     #[test]
     fn gui_url_uses_loopback() {
         assert_eq!(gui_url(3080), "http://127.0.0.1:3080");
+    }
+
+    #[test]
+    fn env_snapshot_formats_sorted() {
+        let mut m = HashMap::new();
+        m.insert("PATH".into(), "/bin".into());
+        m.insert("HOME".into(), "/Users/t".into());
+        assert_eq!(format_env_snapshot(&m), "HOME=/Users/t\nPATH=/bin");
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-archived-sessions"
+description = "Enables the restore_archived_sessions command without any pre-configured scope."
+commands.allow = ["restore_archived_sessions"]
+
+[[permission]]
+identifier = "deny-restore-archived-sessions"
+description = "Denies the restore_archived_sessions command without any pre-configured scope."
+commands.deny = ["restore_archived_sessions"]

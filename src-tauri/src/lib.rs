@@ -12,34 +12,23 @@
 //!     plus an HTTP readiness probe (`GET /` -> 200) and the loopback-only
 //!     shutdown route dsh serves itself.
 
+pub mod archive_ops;
 pub mod dsh_launch;
 pub mod locate_dsh;
+pub mod logging;
 
+pub use archive_ops::{
+    delete_archived, dsh_home, restore_archived, sessions_root, workspace_storage_path,
+    ArchiveOpsReport,
+};
 pub use dsh_launch::{
-    AppSettings, LaunchPlan, DEFAULT_PORT, build_env_snapshot, build_launch_plan, gui_url,
-    load_settings, resolve_node, save_settings, settings_dir, settings_path,
+    build_env_snapshot, build_launch_plan, format_env_snapshot, gui_url, load_settings,
+    resolve_node, save_settings, settings_dir, settings_path, AppSettings, LaunchPlan,
+    DEFAULT_PORT,
 };
 pub use locate_dsh::locate;
 
 use std::path::PathBuf;
-
-/// Lifecycle state of the supervised `dsh web` child (PLAN §6, supervisor).
-///
-/// Rust owns only this coarse state machine — business errors are surfaced by
-/// dsh's own error page; Rust never re-implements a second status layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessState {
-    /// Child spawned, readiness probe not yet satisfied.
-    Starting,
-    /// Readiness probe satisfied; webview navigated to dsh.
-    Ready,
-    /// Child exited unexpectedly; one restart scheduled.
-    Restarting,
-    /// Child exited (or failed after restart); show error page.
-    Exited,
-    /// App is tearing down; sending SIGTERM to the child.
-    Stopping,
-}
 
 /// Where the dsh binary was found and how trustworthy that finding is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +51,16 @@ impl Source {
             Source::Scanned => 1,
             Source::PathFile => 2,
             Source::ZshLogin => 3,
+        }
+    }
+
+    /// Stable lowercase label for logs and the setup UI.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Source::UserSpecified => "user",
+            Source::Scanned => "scanned",
+            Source::PathFile => "path-file",
+            Source::ZshLogin => "zsh-login",
         }
     }
 }
@@ -88,4 +87,38 @@ pub struct LocateOutcome {
     pub primary: Option<DshCandidate>,
     /// Every candidate found, highest priority / version first.
     pub candidates: Vec<DshCandidate>,
+}
+
+/// Extract the HTTP status code from the head of an HTTP response
+/// (everything up to the first `\r\n\r\n`; only the status line is needed).
+///
+/// Returns e.g. `Some(200)` for `"HTTP/1.1 200 OK\r\n..."`, `None` when the
+/// payload does not start with a well-formed status line.
+pub fn parse_status_code(head: &str) -> Option<u16> {
+    let line = head.lines().next()?;
+    let mut parts = line.split_whitespace();
+    let version = parts.next()?;
+    if !version.starts_with("HTTP/") {
+        return None;
+    }
+    parts.next()?.parse::<u16>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_status_code_extracts_code() {
+        assert_eq!(
+            parse_status_code("HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n"),
+            Some(200)
+        );
+        assert_eq!(
+            parse_status_code("HTTP/1.0 404 Not Found\r\n\r\n"),
+            Some(404)
+        );
+        assert_eq!(parse_status_code("<html>not http</html>"), None);
+        assert_eq!(parse_status_code(""), None);
+    }
 }

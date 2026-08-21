@@ -31,7 +31,7 @@ codesign --force --options runtime --timestamp \
   --sign "$CERT_NAME" "$APP_PATH"
 
 echo "==> verify"
-codesign --verify --verbose "$APP_PATH"
+codesign --verify --verbose --strict "$APP_PATH"
 spctl -a -vv "$APP_PATH" || true
 
 echo "==> notarize"

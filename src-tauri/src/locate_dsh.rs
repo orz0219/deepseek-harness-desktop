@@ -63,9 +63,7 @@ pub fn extract_path_exports(shell_text: &str) -> Vec<String> {
             continue;
         }
         // Only consider assignment lines mentioning PATH on the left.
-        let assign = line
-            .trim_start_matches("export")
-            .trim_start();
+        let assign = line.trim_start_matches("export").trim_start();
         if !assign.starts_with("PATH=") {
             continue;
         }
@@ -141,11 +139,21 @@ pub fn shebang_interpreter(executable: &Path, path: &str) -> Option<PathBuf> {
     let mut parts = rest.split_whitespace();
     let first_tok = parts.next()?;
     // `#!/usr/bin/env node` -> interpreter program is the next token ("node").
+    // `#!/usr/bin/env -S node` -> skip env flags (`-S`, `-i`, ...) and
+    // KEY=VALUE assignments before the program name.
     // `#!/opt/homebrew/bin/node` -> first token is already the absolute node.
-    let program = if Path::new(first_tok).is_absolute() {
-        first_tok.to_string()
-    } else if first_tok.ends_with("/env") {
-        parts.next()?.to_string()
+    // The env check must come FIRST: `/usr/bin/env` is itself absolute, but it
+    // is the env launcher, not the interpreter.
+    let program = if first_tok.ends_with("/env") || first_tok == "env" {
+        let mut prog = None;
+        for tok in parts {
+            if tok.starts_with('-') || tok.contains('=') {
+                continue;
+            }
+            prog = Some(tok.to_string());
+            break;
+        }
+        prog?
     } else {
         first_tok.to_string()
     };
@@ -157,21 +165,70 @@ pub fn shebang_interpreter(executable: &Path, path: &str) -> Option<PathBuf> {
 }
 
 /// Compare two dsh version strings for ordering (higher first).
-/// Lexicographic on numeric components; pre-release suffixes compare as lower.
+///
+/// Semver-ish: numeric dot-components compare numerically (missing = 0); when
+/// the numeric cores tie, a release (`1.2.3`) outranks any pre-release
+/// (`1.2.3-rc.7`), and pre-release identifiers follow semver precedence
+/// (numeric identifiers compare numerically and rank below alphanumeric ones).
 pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    fn components(v: &str) -> Vec<(u64, String)> {
-        v.split(|c: char| c == '.' || c == '-' || c == '+')
+    /// Split into (numeric core, pre-release/metadata identifiers).
+    fn parse(v: &str) -> (Vec<u64>, Vec<String>) {
+        let parts: Vec<&str> = v.split(['.', '-', '+']).collect();
+        let mut nums = Vec::new();
+        let mut idx = 0;
+        while idx < parts.len()
+            && !parts[idx].is_empty()
+            && parts[idx].bytes().all(|c| c.is_ascii_digit())
+        {
+            nums.push(parts[idx].parse::<u64>().unwrap_or(0));
+            idx += 1;
+        }
+        let rest = parts[idx..]
+            .iter()
             .filter(|s| !s.is_empty())
-            .map(|s| {
-                let num = s.trim_matches(|c: char| !c.is_ascii_digit());
-                (
-                    num.parse::<u64>().unwrap_or(0),
-                    s.to_string(),
-                )
-            })
-            .collect()
+            .map(|s| s.to_string())
+            .collect();
+        (nums, rest)
     }
-    components(a).cmp(&components(b))
+    fn cmp_ident(a: &str, b: &str) -> std::cmp::Ordering {
+        match (a.parse::<u64>(), b.parse::<u64>()) {
+            (Ok(x), Ok(y)) => x.cmp(&y),
+            (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+            (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+            (Err(_), Err(_)) => a.cmp(b),
+        }
+    }
+    let (na, pa) = parse(a);
+    let (nb, pb) = parse(b);
+    let len = na.len().max(nb.len());
+    for i in 0..len {
+        let x = na.get(i).copied().unwrap_or(0);
+        let y = nb.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x.cmp(&y);
+        }
+    }
+    match (pa.is_empty(), pb.is_empty()) {
+        (true, true) => std::cmp::Ordering::Equal,
+        (true, false) => std::cmp::Ordering::Greater, // release > pre-release
+        (false, true) => std::cmp::Ordering::Less,
+        (false, false) => {
+            for i in 0..pa.len().max(pb.len()) {
+                match (pa.get(i), pb.get(i)) {
+                    (None, Some(_)) => return std::cmp::Ordering::Less,
+                    (Some(_), None) => return std::cmp::Ordering::Greater,
+                    (Some(x), Some(y)) => {
+                        let ord = cmp_ident(x, y);
+                        if ord != std::cmp::Ordering::Equal {
+                            return ord;
+                        }
+                    }
+                    (None, None) => break,
+                }
+            }
+            std::cmp::Ordering::Equal
+        }
+    }
 }
 
 /// Sort candidates best-first: user-specified and higher version win.
@@ -225,19 +282,23 @@ pub fn parse_version(text: &str) -> Option<String> {
 }
 
 /// Build a candidate by detecting its version.
-pub fn make_candidate(
-    executable: PathBuf,
-    node: Option<PathBuf>,
-    source: Source,
-) -> DshCandidate {
-    let version = detect_version(&executable, node.as_ref().map(|v| v.as_path()))
-        .unwrap_or_else(|| "unknown".into());
+pub fn make_candidate(executable: PathBuf, node: Option<PathBuf>, source: Source) -> DshCandidate {
+    let version = detect_version(&executable, node.as_deref()).unwrap_or_else(|| "unknown".into());
     DshCandidate {
         executable,
         node,
         version,
         source,
     }
+}
+
+/// Pick the last stdout line that looks like an absolute path (interactive
+/// zsh may print banner/rc output before `command -v`'s result).
+pub fn last_path_line(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .rfind(|l| l.contains('/') && !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
 }
 
 /// Tier 3: last-resort `zsh -lic 'command -v dsh'`. Uses interactive-login so
@@ -248,7 +309,7 @@ pub fn zsh_login_locate(home: &Path) -> Option<PathBuf> {
         .env("HOME", home)
         .output()
         .ok()?;
-    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let path = last_path_line(&String::from_utf8_lossy(&out.stdout))?;
     if path.is_empty() {
         None
     } else {
@@ -319,33 +380,45 @@ pub fn locate(settings: &AppSettings, home: &Path) -> LocateOutcome {
     }
 }
 
-/// Build a PATH string that includes both the current process PATH and the
+/// Build a PATH string that includes the current process PATH plus the
 /// directories parsed from PATH files, so that dsh (and the node it resolves)
 /// can find git/python/bash etc.
 ///
-/// We unconditionally append the common macOS node/homebrew locations
-/// (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel, and
-/// `~/.local/bin`). Finder-launched GUI apps do NOT inherit the shell PATH, and
-/// Homebrew is typically added via `eval "$(brew shellenv)"` in `~/.zprofile`,
-/// which our `export PATH=...` parser cannot read. dsh is a node script
-/// (`#!/usr/bin/env node`), so if `node` is missing from PATH the spawned
-/// `dsh web` fails with `env: node: No such file or directory` and the launcher
-/// is stuck on the startup screen forever. See issue: launcher stuck on "开启".
+/// Parsed directories and the common macOS tool locations are PREPENDED ahead
+/// of the inherited PATH, mirroring shell semantics where custom directories
+/// (`eval "$(brew shellenv)"`, nvm, ...) usually shadow the system ones.
+/// Finder-launched GUI apps do NOT inherit the shell PATH — the inherited part
+/// here is typically just `/usr/bin:/bin:/usr/sbin:/sbin`. dsh is a node
+/// script (`#!/usr/bin/env node`), so if `node` is missing from PATH the
+/// spawned `dsh web` fails with `env: node: No such file or directory`.
 pub fn augmented_path(home: &Path) -> String {
-    let mut existing = std::env::var("PATH").unwrap_or_default();
-    let mut ensure = |dir: &str| {
-        if !existing.split(':').any(|p| p == dir) {
-            existing.push(':');
-            existing.push_str(dir);
+    let existing = std::env::var("PATH").unwrap_or_default();
+    let mut dirs: Vec<String> = Vec::new();
+    {
+        let mut ensure = |dir: &str| {
+            if dir.is_empty() || dirs.iter().any(|d| d == dir) {
+                return;
+            }
+            if existing.split(':').any(|p| p == dir) {
+                return;
+            }
+            dirs.push(dir.to_string());
+        };
+        for dir in parse_path_files(home) {
+            ensure(&dir.to_string_lossy());
         }
-    };
-    for dir in parse_path_files(home) {
-        ensure(&dir.to_string_lossy());
+        ensure("/opt/homebrew/bin");
+        ensure("/usr/local/bin");
+        ensure(&format!("{}/.local/bin", home.to_string_lossy()));
     }
-    ensure("/opt/homebrew/bin");
-    ensure("/usr/local/bin");
-    ensure(&format!("{}/.local/bin", home.to_string_lossy()));
-    existing
+    let mut parts = dirs;
+    parts.extend(
+        existing
+            .split(':')
+            .filter(|p| !p.is_empty())
+            .map(|p| p.to_string()),
+    );
+    parts.join(":")
 }
 
 /// Drop duplicate executables (keep the first occurrence).
@@ -389,9 +462,52 @@ export FOO=bar
 
     #[test]
     fn version_ordering_higher_first() {
-        assert_eq!(version_cmp("0.1.0-rc.7", "0.1.0-rc.5"), std::cmp::Ordering::Greater);
+        assert_eq!(
+            version_cmp("0.1.0-rc.7", "0.1.0-rc.5"),
+            std::cmp::Ordering::Greater
+        );
         assert_eq!(version_cmp("0.2.0", "0.1.9"), std::cmp::Ordering::Greater);
         assert_eq!(version_cmp("0.1.0", "0.1.0"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn release_outranks_prerelease_and_semver_precedence() {
+        // A final release must sort above its pre-releases (regression guard:
+        // the old tuple-compare ranked rc above the stable release).
+        assert_eq!(
+            version_cmp("0.1.0", "0.1.0-rc.7"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            version_cmp("1.0.0-alpha", "1.0.0-beta"),
+            std::cmp::Ordering::Less
+        );
+        // Numeric identifiers compare numerically, not lexically.
+        assert_eq!(
+            version_cmp("1.0.0-10", "1.0.0-9"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(version_cmp("1.0.0-2", "1.0.0-10"), std::cmp::Ordering::Less);
+        // Missing components count as zero.
+        assert_eq!(version_cmp("1.0", "1.0.0"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn shebang_env_with_flags_skips_to_program() {
+        // Write a temp script whose shebang uses `env -S node`.
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("dsh");
+        std::fs::write(&script, "#!/usr/bin/env -S node\nconsole.log(1)\n").unwrap();
+        let interp = shebang_interpreter(&script, "/usr/bin:/bin");
+        // `node` is not in the fake PATH, so resolution fails — but it must
+        // fail looking for "node", never "-S".
+        assert!(interp.is_none());
+        // And with node's real dir on PATH it resolves to node itself.
+        if let Some(real_node) = which_in("node", &std::env::var("PATH").unwrap_or_default()) {
+            let bin = real_node.parent().unwrap().to_string_lossy();
+            let interp = shebang_interpreter(&script, &bin);
+            assert_eq!(interp.as_deref(), Some(real_node.as_path()));
+        }
     }
 
     #[test]
@@ -424,7 +540,10 @@ export FOO=bar
     #[test]
     fn parses_version_token() {
         assert_eq!(parse_version("0.1.0-rc.7").as_deref(), Some("0.1.0-rc.7"));
-        assert_eq!(parse_version("dsh 0.1.0-rc.7 (rc)").as_deref(), Some("0.1.0-rc.7"));
+        assert_eq!(
+            parse_version("dsh 0.1.0-rc.7 (rc)").as_deref(),
+            Some("0.1.0-rc.7")
+        );
         assert_eq!(parse_version("no version here").as_deref(), None);
     }
 
@@ -446,7 +565,20 @@ export FOO=bar
     #[test]
     fn expand_home_works() {
         let home = Path::new("/Users/tester");
-        assert_eq!(expand_home("~/bin/dsh", home), PathBuf::from("/Users/tester/bin/dsh"));
+        assert_eq!(
+            expand_home("~/bin/dsh", home),
+            PathBuf::from("/Users/tester/bin/dsh")
+        );
         assert_eq!(expand_home("/abs/dsh", home), PathBuf::from("/abs/dsh"));
+    }
+
+    #[test]
+    fn last_path_line_skips_rc_noise() {
+        let noisy = "oh-my-zsh banner\nlast command: 3ms\n/opt/homebrew/bin/dsh\n";
+        assert_eq!(
+            last_path_line(noisy).as_deref(),
+            Some("/opt/homebrew/bin/dsh")
+        );
+        assert_eq!(last_path_line("no paths here\njust text"), None);
     }
 }
