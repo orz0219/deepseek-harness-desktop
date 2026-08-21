@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    macOS security model (PLAN §7, Round 004 修正):
+    - App Sandbox = OFF: 开启 Sandbox 后无法 spawn 用户环境的外部 binary
+      (/opt/homebrew/bin/dsh、nvm 路径等)，开发者工具/本地服务管理器类 app 通常关 Sandbox。
+    - Hardened Runtime = ON: 在签名时通过 `codesign --options runtime` 启用
+      （不是 entitlement，而是 codesign 标志）。此处不提前加 allow-unsigned-executable-memory /
+      allow-jit 等；仅当 Tauri/WKWebView 实测报错再加。
+  -->
+  <key>com.apple.security.app-sandbox</key>
+  <false/>
+</dict>
+</plist>

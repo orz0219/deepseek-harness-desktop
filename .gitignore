@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Rust / Cargo build artifacts
+src-tauri/target/
+
+# Tauri generated schemas (rebuilt on every build)
+src-tauri/gen/schemas
+
+# Editors
+.vscode/
+.idea/
+*.swp
