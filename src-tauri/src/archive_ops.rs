@@ -91,8 +91,15 @@ pub fn sessions_root(home: &Path) -> PathBuf {
 }
 
 /// Validate that `id` is a safe session id we may use to build paths.
+///
+/// Security boundary: a safe id is a single path segment made only of ASCII
+/// alphanumerics and hyphens, bounded in length, and free of `..`
+/// (path-traversal). We deliberately do NOT pin a literal prefix: dsh's
+/// session-id scheme has varied across versions (`session-<n>`, `od-<uuid>`,
+/// …) and the prefix was never what made an id safe — the character class and
+/// the `..` check are.
 fn is_safe_session_id(id: &str) -> bool {
-    id.starts_with("session-")
+    !id.is_empty()
         && id.len() <= 128
         && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         && !id.contains("..")
@@ -221,10 +228,12 @@ fn prune_workspace_session_refs(
 
 /// Locate every directory physically holding `id` under `sessions_root`.
 ///
-/// dsh stores sessions as `<root>/<workspace-slug>/session-<uuid>/`; older or
-/// edge layouts may place them directly at `<root>/session-<uuid>/`. We check
-/// both the root level and one level deeper. Only directories actually named
-/// `session-<id>` are considered; anything else is ignored.
+/// dsh names each session directory after its session id: typically
+/// `<root>/<workspace-slug>/<id>/` (with `<id>` being the full session id,
+/// e.g. `session-<uuid>` or `od-<uuid>`); edge layouts may also place them
+/// directly at `<root>/<id>/`. We check both the root level and one level
+/// deeper. The id must be a safe path segment (see `is_safe_session_id`);
+/// unsafe ids are ignored.
 fn find_session_dirs(root: &Path, id: &str) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let target = match safe_dir_name(id) {
