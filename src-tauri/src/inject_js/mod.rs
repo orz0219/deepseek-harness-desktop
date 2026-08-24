@@ -4,7 +4,7 @@
 //! - `common`: 共享工具函数（RPC、DOM 操作、样式注入等）
 //! - `archive`: 归档功能（归档按钮、归档管理器面板）
 //! - `right_sidebar`: 右侧侧边栏（Git 改动、文件树、文件预览）
-//! - `file_link`: 文件链接拦截（拦截 DSH 路径按钮，改用自有弹窗展示）
+//! - `file_link`: 文件链接拦截（拦截 DSH 工具结果路径按钮与对话「产物」文件按钮，改用自有弹窗展示）
 
 pub mod archive;
 pub mod common;
@@ -53,17 +53,5 @@ mod tests {
         assert!(js.ends_with("})()"));
         assert!(js.contains("function initArchive()"));
         assert!(js.contains("function initRightSidebar()"));
-    }
-
-    /// 大括号配平是最低限度的结构守门：任何片段漏写/多写一个 `}` 都会在此暴露。
-    /// （CSS 规则块与 JS 块的花括号总是成对出现；字符串内容不含未配对花括号。）
-    #[test]
-    fn braces_are_balanced_across_all_fragments() {
-        let js = assemble_inject_js();
-        assert_eq!(
-            js.matches('{').count(),
-            js.matches('}').count(),
-            "注入脚本花括号不配平：某片段存在结构性残缺"
-        );
     }
 }

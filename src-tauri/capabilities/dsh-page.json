@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "dsh-page",
-  "description": "Grant the main launcher window IPC access to the custom commands from both the local setup/error page and the injected dsh web page (a remote loopback origin). The archive commands are scoped to dsh's own on-disk storage and are the only commands the remote page may invoke.",
+  "description": "Grant the main launcher window IPC access to the custom commands from both the local setup/error page and the injected dsh web page (a remote loopback origin). The remote page may invoke the archive commands (scoped to dsh's own on-disk storage) plus the right-sidebar commands (git diff, file tree, file/image preview, clipboard, reveal-in-finder).",
   "windows": ["main"],
   "local": true,
   "remote": {
@@ -17,6 +17,7 @@
     "allow-get-git-diff",
     "allow-get-file-tree",
     "allow-read-file-content",
+    "allow-read-file-base64",
     "allow-copy-to-clipboard",
     "allow-reveal-in-finder"
   ]

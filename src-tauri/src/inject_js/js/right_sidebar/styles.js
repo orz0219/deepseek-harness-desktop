@@ -24,7 +24,7 @@
     '.dsh-rs-pane.active{display:block;}' +
     // 工具栏
     '.dsh-rs-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #eef0f3;background:#fafbfc;}' +
-    '.dsh-rs-toolbar-title{font-size:12px;font-weight:600;color:#374151;flex:1;}' +
+    '.dsh-rs-toolbar-title{font-size:12px;font-weight:400;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}' +
     '.dsh-rs-toolbar-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:none;border-radius:6px;background:transparent;color:#6b7280;cursor:pointer;transition:background .15s ease,color .15s ease;}' +
     '.dsh-rs-toolbar-btn:hover{background:#f3f4f6;color:#374151;}' +
     '.dsh-rs-toolbar-btn svg{display:block;}' +

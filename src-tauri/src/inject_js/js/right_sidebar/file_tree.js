@@ -341,7 +341,6 @@
     openItem.setAttribute('role', 'menuitem');
     openItem.textContent = isDir ? '在访达中打开' : '在访达中显示';
     wireCtxItem(openItem, function () {
-      console.log('[dsh] reveal_in_finder', path, isDir);
       tauriInvoke('reveal_in_finder', { path: path, isDir: isDir })
         .then(function () { showRsToast('已在访达中打开'); })
         .catch(function (err) {

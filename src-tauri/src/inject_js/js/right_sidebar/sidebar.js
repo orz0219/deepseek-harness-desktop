@@ -13,7 +13,12 @@
     });
 
     // 按需加载数据
-    if (tabName === 'git' && !rsState.gitData) {
+    // 切到 Git 标签时总是重新加载：避免使用过期缓存。否则应用启动早期
+    // cwd 解析尚未稳定（取到其它会话目录）时加载的数据会被一直缓存，
+    // 导致之后切回 Git 标签仍显示旧目录的改动（例如显示成 novel 项目的 diff）。
+    if (tabName === 'git') {
+      rsState.gitData = null;
+      rsState.currentCwd = null; // 强制重新解析当前会话目录，避免沿用早期错误缓存
       loadGitData();
     } else if (tabName === 'files' && !rsState.fileTree) {
       loadFileTree();
@@ -118,12 +123,18 @@
     var toolbar = document.createElement('div');
     toolbar.className = 'dsh-rs-toolbar';
     toolbar.innerHTML =
-      '<span class="dsh-rs-toolbar-title">开发者工具</span>' +
+      '<span class="dsh-rs-toolbar-title" id="dsh-rs-cwd" title="当前工作目录">加载工作目录…</span>' +
+      '<button class="dsh-rs-toolbar-btn" onclick="copyCwd()" aria-label="复制路径" title="复制当前工作目录路径">' + ICON_COPY + '</button>' +
+      '<button class="dsh-rs-toolbar-btn" onclick="revealCwd()" aria-label="在访达中显示" title="在访达中显示当前目录">' + ICON_FOLDER + '</button>' +
       '<button class="dsh-rs-toolbar-btn" onclick="refreshCurrentPane()" aria-label="刷新">' + ICON_REFRESH + '</button>';
 
     // 组装面板
     panel.appendChild(tabs);
     panel.appendChild(toolbar);
+    // 首屏不在最早同步获取：那时 RPC 尚未就绪会让请求永久 pending、缓存永远填不上，
+    // 工具栏卡在「加载工作目录…」。延迟到 dsh 接管且后端就绪后再填充一次缓存，
+    // 之后各模块直接读 rsState.currentCwd 缓存即可。
+    setTimeout(updateCwdTitle, 1200);
     panel.appendChild(content);
     // 面板底部提示条：复制/在访达打开等操作的反馈，始终可见且不受 dsh web 样式影响
     var hint = document.createElement('div');
@@ -198,7 +209,41 @@
     rsState.fileTree = null;
     rsState.currentCwd = null;  // 清除 cwd 缓存
     switchTab(rsState.activeTab);
+    updateCwdTitle();  // 刷新后重新解析并更新工作目录标题
   };
+
+   // 更新工具栏标题为当前工作目录绝对路径
+   function updateCwdTitle() {
+     var el = document.getElementById('dsh-rs-cwd');
+     if (!el) return;
+     if (rsState.currentCwd) {            // 缓存命中：模块直接读缓存，不每次重新获取
+       el.textContent = rsState.currentCwd;
+       return;
+     }
+     getCurrentCwd().then(function (cwd) {
+       el.textContent = cwd ? cwd : '无法获取工作目录';
+     });
+   }
+
+   // 全局函数：复制当前工作目录绝对路径到剪贴板
+   window.copyCwd = function () {
+     getCurrentCwd().then(function (cwd) {
+       if (!cwd) { showRsToast('无法获取当前工作目录'); return; }
+       tauriInvoke('copy_to_clipboard', { text: cwd })
+         .then(function () { showRsToast('已复制：' + cwd); })
+         .catch(function (e) { showRsToast('复制失败：' + (e && e.message ? e.message : e)); });
+     });
+   };
+
+   // 全局函数：在访达（Finder）中显示当前工作目录
+   window.revealCwd = function () {
+     getCurrentCwd().then(function (cwd) {
+       if (!cwd) { showRsToast('无法获取当前工作目录'); return; }
+       tauriInvoke('reveal_in_finder', { path: cwd, is_dir: true })
+         .then(function () { showRsToast('已在访达中打开'); })
+         .catch(function (e) { showRsToast('打开访达失败：' + (e && e.message ? e.message : e)); });
+     });
+   };
 
   // 快捷键支持：Cmd+Shift+B 切换面板
   document.addEventListener('keydown', function (e) {

@@ -41,3 +41,6 @@ jobs:
       - name: Compile check (binary incl. Tauri glue)
         working-directory: src-tauri
         run: cargo check
+
+      - name: JS injection syntax gate
+        run: bash scripts/check-js.sh

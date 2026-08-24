@@ -540,10 +540,6 @@ pub fn copy_to_clipboard(text: String) -> Result<(), String> {
     let status = child
         .wait()
         .map_err(|e| format!("等待 pbcopy 完成失败: {e}"))?;
-    let _ = std::fs::write(
-        "/tmp/dsh_copy.log",
-        format!("copy ok={} exit={:?} len={}\n", status.success(), status.code(), text.len()),
-    );
     if status.success() {
         Ok(())
     } else {
@@ -562,10 +558,6 @@ pub fn reveal_in_finder(path: String, is_dir: bool) -> Result<(), String> {
     let status = cmd
         .status()
         .map_err(|e| format!("无法在访达中打开 {path}: {e}"))?;
-    let _ = std::fs::write(
-        "/tmp/dsh_reveal.log",
-        format!("reveal path={} is_dir={} ok={} exit={:?}\n", path, is_dir, status.success(), status.code()),
-    );
     if status.success() {
         Ok(())
     } else {

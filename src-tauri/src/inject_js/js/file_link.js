@@ -5,6 +5,22 @@
 // 这里在 document 捕获阶段拦截，阻止 DSH 默认行为，改用已注入的 window.previewFile 弹窗展示文件内容。
 function initFileLinkInterceptor() {
   document.addEventListener('click', function (e) {
+    // 1) 「产物」按钮：DSH 对话末尾产物说明里的文件按钮。
+    //    形如 <button class="P4kPIW_file" title="/abs/path/file.js" ...>file.js</button>，
+    //    title 已是绝对路径（mac 以 "/" 开头）。不依赖易变 CSS hash 类名，直接用 title。
+    var prod = e.target.closest && e.target.closest('button[title^="/"]');
+    if (prod) {
+      var abs = (prod.getAttribute('title') || '').trim();
+      if (abs) {
+        // 捕获阶段先于 DSH 默认预览行为；阻断冒泡，改用自有弹窗
+        e.stopPropagation();
+        e.preventDefault();
+        window.previewFile(abs);
+      }
+      return;
+    }
+
+    // 2) 原有 fileLink 按钮：DSH 工具结果里相对 cwd 的路径按钮
     // 按钮内可能有子节点，用 closest 向上找到 fileLink 按钮
     var link = e.target.closest && e.target.closest('[class*="fileLink"]');
     if (!link) return;

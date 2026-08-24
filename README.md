@@ -25,8 +25,14 @@ locate dsh → spawn `dsh web` → 轮询就绪 → webview 导航 → 看守进
    就绪判定为 **`GET /` 与 `/manifest.webmanifest` 双 200**，30 秒超时——与 dsh
    官方桌面插件 `@linxin666/dsh-desktop-launcher` 的行为一致。
 4. **导航 + 注入**：就绪后 webview 导航到 `http://127.0.0.1:<port>`，并向页面
-   注入「归档所有对话」侧边栏按钮（锚定 dsh 搜索按钮的 aria-label；两段式确认，
-   经 dsh 自身 RPC `/api/*` 执行，跳过正在运行中的会话）。
+   注入三类增强脚本（锚定 dsh 现有 DOM，不改动 dsh 自身前端）：
+   - **归档所有对话**侧边栏按钮（锚定 dsh 搜索按钮的 aria-label；两段式确认，
+     经 dsh 自身 RPC `/api/*` 执行，跳过正在运行中的会话）。
+   - **右侧侧边栏**：Git 改动（调用 `get_git_diff`）、文件树（调用 `get_file_tree`）、
+     文件/图片预览（文本走 `read_file_content`、图片走 `read_file_base64`，
+     复制到剪贴板走 `copy_to_clipboard`、在访达中打开走 `reveal_in_finder`）。
+   - **文件链接拦截**（`file_link`）：拦截 DSH 工具结果路径按钮与对话「产物」文件按钮，
+     改用自有弹窗展示，而非跳转到系统默认处理。
 5. **看守与清理**：dsh 以独立进程组运行；App 退出时对整个进程组发 SIGTERM，
    宽限 5 秒后 SIGKILL 幸存者，并用 `pgrep -g` 校验子树已清（PLAN 验收点 4）。
 6. **单实例与窗口行为**：二次启动只聚焦已有窗口；点关闭按钮隐藏到程序坞
