@@ -1,138 +1,96 @@
-# DeepSeek Harness Desktop（macOS 薄启动器）
+# DeepSeek Harness Desktop
 
-一个原生 macOS 窗口（Tauri 2 / WKWebView），打开即加载你本机运行的 `dsh web`。
-启动器**不打包 node / dsh / node_modules**，运行期完全复用你环境里已装的 node 与 dsh。
+> 一个把 DeepSeek Harness 变成 macOS 原生桌面应用的小工具。
+> A tiny macOS desktop wrapper that turns DeepSeek Harness into a native app.
 
-> 完整设计见 [`PLAN.md`](./PLAN.md)；对本机 dsh 行为的实测与修正见
-> [`FEASIBILITY.md`](./FEASIBILITY.md)；自有界面的配色规范见 [`THEME.md`](./THEME.md)。
+你在浏览器里用 DeepSeek Harness（DSH）做开发时，是不是经常要在网页、编辑器和终端之间来回切换？这个启动器把 DSH 的网页直接装进一个原生 macOS 窗口，并在对话旁边加上本地文件、Git 改动和文件预览——让你少切窗口、多看代码。
 
-## 工作原理
+When you use DeepSeek Harness (DSH) for coding in the browser, you constantly jump between the web page, your editor, and the terminal. This launcher puts DSH into a native macOS window and adds a local file tree, Git diffs, and file previews right next to your chat—so you switch less and read more code.
 
-```
-locate dsh → spawn `dsh web` → 轮询就绪 → webview 导航 → 看守进程 → 退出时清理子树
-```
+## ✨ 功能亮点 / Features
 
-1. **定位 dsh**（Tier 0-3，详见 PLAN 门禁 A）：
-   Tier 0 用户指定路径 > Tier 1 扫描常见 bin 目录并按版本排序 >
-   Tier 2 解析 `/etc/paths`、`/etc/paths.d/*`、`~/.zprofile` 的 PATH 导出 >
-   Tier 3 `zsh -lic 'command -v dsh'` 兜底。GUI 启动不继承 shell PATH，
-   因此还会把 Homebrew / nvm / pnpm 常见位置并入 spawn 的 `PATH`。
-2. **拉起 dsh**：`<node> <dsh> web --host 127.0.0.1 --port <port> --no-open`
-   （默认端口 3080）。必须 `--no-open`，否则 dsh 会自己拉起系统浏览器；
-   cwd 设为用户 Home，传入 env 快照（HOME / PATH / SHELL / LANG /
-   NODE_PATH / NVM_DIR，见 PLAN 验收点 2）；子进程放入独立进程组便于整树清理。
-3. **就绪信号**：dsh 没有真实 `/health` 端点（任意路径都是 SPA 兜底页），
-   就绪判定为 **`GET /` 与 `/manifest.webmanifest` 双 200**，30 秒超时——与 dsh
-   官方桌面插件 `@linxin666/dsh-desktop-launcher` 的行为一致。
-4. **导航 + 注入**：就绪后 webview 导航到 `http://127.0.0.1:<port>`，并向页面
-   注入三类增强脚本（锚定 dsh 现有 DOM，不改动 dsh 自身前端）：
-   - **归档所有对话**侧边栏按钮（锚定 dsh 搜索按钮的 aria-label；两段式确认，
-     经 dsh 自身 RPC `/api/*` 执行，跳过正在运行中的会话）。
-   - **右侧侧边栏**：Git 改动（调用 `get_git_diff`）、文件树（调用 `get_file_tree`）、
-     文件/图片预览（文本走 `read_file_content`、图片走 `read_file_base64`，
-     复制到剪贴板走 `copy_to_clipboard`、在访达中打开走 `reveal_in_finder`）。
-   - **文件链接拦截**（`file_link`）：拦截 DSH 工具结果路径按钮与对话「产物」文件按钮，
-     改用自有弹窗展示，而非跳转到系统默认处理。
-5. **看守与清理**：dsh 以独立进程组运行；App 退出时对整个进程组发 SIGTERM，
-   宽限 5 秒后 SIGKILL 幸存者，并用 `pgrep -g` 校验子树已清（PLAN 验收点 4）。
-6. **单实例与窗口行为**：二次启动只聚焦已有窗口；点关闭按钮隐藏到程序坞
-   （后台 dsh 继续运行），点程序坞图标恢复。
+**🖥️ 原生桌面体验 · Native desktop experience**
 
-## 已实测的关键事实（详见 FEASIBILITY.md）
+打开就是独立的 macOS 窗口，不占用浏览器标签页；点关闭只是藏到程序坞（后台 DSH 继续运行），点程序坞图标随时恢复。单实例设计，二次启动只会聚焦已有窗口。
 
-- **启动命令必须加 `--no-open`**：否则 dsh 会自己拉起系统浏览器。
-- **没有真实 `/health` 端点**：`/health` 只是 SPA 兜底页（任意路径都返回 200 HTML），
-  就绪信号改用 `GET /` + `/manifest.webmanifest` 双 200。
-- **关机桥接 dsh 自带**：dsh web 已注册 loopback-only 的
-  `/api/dsh-desktop-launcher/shutdown`，启动器无需实现原生关机桥。
-- **默认端口 3080 ✅**、**回环信任栅栏 ✅** 与 dsh 桌面插件一致。
-- 若配置端口上已有 dsh 在跑（如终端里手动起的），启动器直接连接该实例，
-  不再重复拉起。
+Launch into a standalone macOS window instead of a browser tab. Closing the window only hides it to the Dock (DSH keeps running in the background); click the Dock icon to bring it back anytime. Single-instance: a second launch just focuses the existing window.
 
-## 构建与运行
+**📁 本地文件树 + 文件/图片预览 · Local file tree & file/image preview**
 
-需要：Rust 工具链、Xcode Command Line Tools；运行期需已装 `node` 与 `dsh`。
+右侧边栏直接浏览当前项目的文件树（自动跳过 `node_modules`、`.git` 等），点开任意文件即可预览文本内容或查看图片——不用切到编辑器或终端。
 
-```sh
-# 安装 Tauri CLI（一次性）
-cargo install tauri-cli --version "^2"
+Browse your project's file tree right from the sidebar (auto-skips `node_modules`, `.git`, etc.), and open any file to preview its text or view images—no need to switch to your editor or terminal.
 
-# 开发运行
-cd src-tauri
-cargo tauri dev
+**🔀 Git 改动一览 · Git changes at a glance**
 
-# 单测（纯逻辑层：定位 / 启动计划 / 设置，不依赖 Tauri）
-cargo test --lib
-```
+侧边栏一键查看当前工作区的 Git 改动（diff），新增/删除行数与改动文件列表一目了然，省去切到终端跑 `git diff`。
 
-首次启动若未发现 dsh，初始页会让你填入 dsh 可执行文件路径（例如
-`/opt/homebrew/bin/dsh`），保存后自动重新定位并拉起。
+See the current working tree's Git changes (diff) with one click from the sidebar—additions/deletions and the changed-file list at a glance, without dropping to a terminal `git diff`.
 
-## 配置
+**📋 一键复制 / 在访达打开 · Copy & reveal in Finder**
 
-设置持久化于
-`~/Library/Application Support/com.deepseek.harness.desktop/settings.json`：
+文件内容一键复制到剪贴板，或一键在访达（Finder）中定位并选中——把本地文件与 AI 对话之间的搬运成本降到最低。
 
-| 字段 | 说明 | 默认 |
-|---|---|---|
-| `dsh_path` | Tier 0 用户指定的 dsh 可执行文件路径（唯一完全可靠的来源） | 无 |
-| `node_path` | 显式指定 node 运行时；缺省时从 dsh 的 shebang 解析 | 自动解析 |
-| `port` | dsh web 监听端口（loopback） | `3080` |
-| `profile` | 透传给 `dsh web` 的 `--profile` 参数 | 无 |
+Copy file contents to the clipboard with one click, or reveal and select the file in Finder—minimizing the back-and-forth between your local files and the AI chat.
 
-> 注意：当前设置页只支持填写 dsh 路径；修改端口需手动编辑上述 JSON 文件后重启。
+**🗂️ 对话批量归档 · Batch archive conversations**
 
-## 打包 / 签名 / 公证（PLAN §7）
+一键把会话批量归档，保持工作区整洁；归档会自动跳过正在运行的会话，并采用两段式确认避免误操作。
 
-安全模型：**App Sandbox OFF**（spawn 外部用户 binary 所必需）+
-**Hardened Runtime ON**（由 codesign 标志启用）。
+Archive your conversations in one click to keep the workspace tidy. Archiving automatically skips sessions that are still running and uses a two-step confirmation to prevent mistakes.
 
-```sh
-cargo tauri build   # 生成 .app / .dmg
+**🔗 文件链接拦截弹窗 · File-link interception**
 
-APP_PATH=target/release/bundle/macos/"DeepSeek Harness.app" \
-APPLE_KEY_ID=... APPLE_ISSUER=... APPLE_KEY_PATH=... TEAM_ID=... \
-./sign.sh          # codesign (runtime) + notarytool 公证 + stapler
-```
+对话里 DSH 工具返回的文件路径按钮、以及「产物」文件按钮，不再跳转到系统默认程序，而是用自带弹窗展示，查看更顺手。
 
-## 仓库布局
+Path buttons returned by DSH tools in the chat—and "artifact" file buttons—no longer jump to the system default app; they open in a built-in popup for a smoother viewing experience.
 
-```
-deepseek-harness-desktop/
- ├─ PLAN.md                      设计实施方案（v4.1）
- ├─ FEASIBILITY.md               门禁实测与对 PLAN 的修正
- ├─ THEME.md                     自有界面配色规范
- ├─ ui/index.html                初始状态/引导页（无构建步骤的静态页）
- └─ src-tauri/
-    ├─ Cargo.toml                tauri v2 + Tauri-free 纯逻辑 lib（可单测）
-    ├─ tauri.conf.json           window / csp / identifier
-    ├─ entitlements.plist        Sandbox OFF
-    ├─ resources/settings.default.json
-    ├─ icons/                    应用图标（icon-source.svg 为源图）
-    └─ src/
-       ├─ lib.rs                 公共类型 + 模块声明（纯逻辑，无 Tauri 依赖）
-       ├─ locate_dsh.rs          定位（Tier 0-3）+ 单测
-       ├─ dsh_launch.rs          启动计划构造 + env 快照 + 设置 + 单测
-       └─ main.rs                Tauri 粘合：定位→拉起→就绪轮询→导航→supervisor→清理
-```
+## 🚀 安装与快速上手 / Install & get started
 
-## 已知问题与限制
+**前置条件 · Prerequisites**
 
-按「最小可用、随 dsh 演进」原则推进，以下为当前已知边界：
+本启动器运行期复用你本机已安装的 `node` 与 `dsh`，自身不打包这两者。使用前请确保：
 
-- **注入按钮依赖 DOM 锚点**（搜索按钮 aria-label / 侧边栏文案），dsh 改版可能
-  失效；批量归档范围含 blank 会话，与侧边栏可见集合略有差异（属已自知的取舍）。
-- 就绪探测为「`/` + `/manifest.webmanifest` 双 200 且 `/api` 404」签名，
-  极端情况下仍可能把端口上另一个 dsh 形态的服务误认（残leave歧义已接受）。
-- 跨机访问（非回环）不在第一版范围（dsh 设计上锁死回环栅栏）；
-  Windows/Linux 不在第一版范围。
-- 归档管理（撤销归档 / 物理删除）由启动器直接编辑 `~/.dsh` 存储，**操作后需重启
-  dsh 生效**（dsh 在内存缓存中）；若 dsh 由本启动器托管则自动重启一次，否则
-  页面会提示用户手动重启。
+- 已安装 Node.js
+- 已安装 `dsh`（DeepSeek Harness CLI）
 
-### 已修复的已知缺陷（历史记录）
+This launcher reuses the `node` and `dsh` already installed on your machine at runtime—it does not bundle either. Before starting, make sure you have:
 
-早期版本存在的以下问题均已修复：意外退出后「重启一次」不可达、导航后无错误页
-（现出错时导航回内置页）、stderr 不排空导致 dsh 长跑假死、无文件日志、改端口需
-手编 JSON、以及 `alert()` 在 WKWebView 下不显示（现改用页面内联提示并新增「重新
-启动」按钮）。
+- Node.js installed
+- `dsh` (the DeepSeek Harness CLI) installed
+
+**下载安装 · Download & install**
+
+1. 前往 GitHub Releases 下载最新的 `DeepSeek Harness-x.y.z.dmg`。
+2. 打开 `.dmg`，把 **DeepSeek Harness** 拖入「应用程序」。
+3. 从启动台或程序坞打开即可。
+
+1. Go to GitHub Releases and download the latest `DeepSeek Harness-x.y.z.dmg`.
+2. Open the `.dmg` and drag **DeepSeek Harness** into Applications.
+3. Launch it from Launchpad or the Dock.
+
+**首次启动 · First launch**
+
+如果启动器没有自动找到 `dsh`，首屏会让你填写 `dsh` 可执行文件的路径（例如 `/opt/homebrew/bin/dsh`）。保存后它会自动定位并拉起 DSH，之后就能正常使用了。
+
+If the launcher can't find `dsh` automatically, the first screen asks for the path to the `dsh` executable (e.g. `/opt/homebrew/bin/dsh`). After saving, it locates and launches DSH for you, and you're ready to go.
+
+## ❓ 常见问题 / FAQ
+
+**打开后界面是空的？ / The window is blank?**
+
+请确认本机已安装 `node` 与 `dsh`，并在首屏正确填写了 `dsh` 路径。启动器本身不内置这两者。
+
+Make sure `node` and `dsh` are installed on your machine and that you entered the correct `dsh` path on the first screen. The launcher does not bundle them.
+
+**关闭窗口后 DSH 还在跑吗？ / Is DSH still running after I close the window?**
+
+点关闭只是把窗口藏到程序坞，后台 DSH 继续运行；只有完全退出应用才会清理 DSH 进程。
+
+Closing only hides the window to the Dock and DSH keeps running in the background; the DSH process is cleaned up only when you fully quit the app.
+
+**支持 Windows / Linux 吗？ / Windows / Linux support?**
+
+当前仅支持 macOS。
+
+Currently macOS only.
