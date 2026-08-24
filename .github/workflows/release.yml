@@ -1,0 +1,46 @@
+name: Release
+
+# 打 tag（如 v0.1.0）推送到远程时，自动构建 macOS 包并发布到 GitHub Releases。
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 创建 Release 需要写仓库内容的权限。
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # tauri-action 会自动处理 tauri-cli 安装、构建与 Release 上传。
+      # 未提供 APPLE_CERTIFICATE / APPLE_API_* 等 Secrets → 不做签名与公证。
+      - name: Build Tauri app and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'DeepSeek Harness ${{ github.ref_name }}'
+          releaseBody: |
+            Download the `.dmg` below to install.
+
+            ⚠️ 本构建**未经过 Apple 公证**（无开发者签名），首次打开时 macOS Gatekeeper 可能拦截：
+            右键 → 打开，或在终端执行 `xattr -cr /Applications/DeepSeek\ Harness.app` 后再打开。
+          releaseDraft: false
+          prerelease: false
+          args: '--bundles dmg'
