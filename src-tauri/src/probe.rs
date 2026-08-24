@@ -136,7 +136,9 @@ pub fn kill_port_owner(port: u16) -> Vec<i32> {
     let mut pids = Vec::new();
     for tok in String::from_utf8_lossy(&out.stdout).split_whitespace() {
         if let Ok(pid) = tok.parse::<i32>() {
-            let _ = Command::new("kill").args(["-TERM", "--", &pid.to_string()]).status();
+            let _ = Command::new("kill")
+                .args(["-TERM", "--", &pid.to_string()])
+                .status();
             pids.push(pid);
         }
     }

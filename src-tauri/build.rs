@@ -12,6 +12,12 @@ fn main() {
             "restart_dsh",
             "restore_archived_sessions",
             "delete_archived_sessions",
+            "get_file_tree",
+            "get_git_diff",
+            "read_file_content",
+            "read_file_base64",
+            "copy_to_clipboard",
+            "reveal_in_finder",
         ]),
     ))
     .expect("failed to run tauri-build");

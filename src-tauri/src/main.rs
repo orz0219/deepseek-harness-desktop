@@ -9,15 +9,17 @@
 //! the loopback-only shutdown route dsh serves itself.
 
 use std::sync::atomic::Ordering;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use dsh_launcher::{gui_url, load_settings};
 use tauri::{Manager, WindowEvent};
 
 use crate::commands::{
-    delete_archived_sessions, get_status, restart_dsh, restore_archived_sessions, select_dsh,
+    copy_to_clipboard, delete_archived_sessions, get_file_tree, get_git_diff, get_status,
+    read_file_base64, read_file_content, reveal_in_finder, restart_dsh,
+    restore_archived_sessions, select_dsh,
 };
 use crate::probe::terminate_tree;
 use crate::state::{LauncherState, StatusPayload, ST_STARTING};
@@ -34,11 +36,11 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// How often the supervisor re-checks a healthy dsh (owned or not).
 pub const WATCH_INTERVAL: Duration = Duration::from_secs(3);
 
-mod inject_js;
-mod state;
-mod probe;
-mod supervisor;
 mod commands;
+mod inject_js;
+mod probe;
+mod state;
+mod supervisor;
 
 fn main() {
     let settings_path = dsh_launcher::settings_path(IDENTIFIER);
@@ -92,6 +94,12 @@ fn main() {
             restart_dsh,
             restore_archived_sessions,
             delete_archived_sessions,
+            get_git_diff,
+            get_file_tree,
+            read_file_content,
+            read_file_base64,
+            copy_to_clipboard,
+            reveal_in_finder,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

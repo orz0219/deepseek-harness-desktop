@@ -62,4 +62,3 @@ pub const ST_STARTING: &str = "starting";
 pub const ST_READY: &str = "ready";
 pub const ST_MISSING_DSH: &str = "missing-dsh";
 pub const ST_ERROR: &str = "error";
-

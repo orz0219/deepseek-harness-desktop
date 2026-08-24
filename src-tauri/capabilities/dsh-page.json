@@ -13,6 +13,11 @@
     "allow-select-dsh",
     "allow-restart-dsh",
     "allow-restore-archived-sessions",
-    "allow-delete-archived-sessions"
+    "allow-delete-archived-sessions",
+    "allow-get-git-diff",
+    "allow-get-file-tree",
+    "allow-read-file-content",
+    "allow-copy-to-clipboard",
+    "allow-reveal-in-finder"
   ]
 }

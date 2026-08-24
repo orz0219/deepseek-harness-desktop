@@ -3,13 +3,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use dsh_launcher::{
-    build_launch_plan, format_env_snapshot, gui_url, locate, load_settings, AppSettings,
+    build_launch_plan, format_env_snapshot, gui_url, load_settings, locate, AppSettings,
     DshCandidate,
 };
 use tauri::Manager;
 
-use crate::inject_js::INJECT_JS;
-use crate::probe::{home_dir, http_probe, dsh_signature_ok, wait_for_ready, spawn_dsh};
+use crate::inject_js::assemble_inject_js;
+use crate::probe::{dsh_signature_ok, home_dir, http_probe, spawn_dsh, wait_for_ready};
 use crate::state::{
     CandidateView, LauncherState, Lifecycle, ST_ERROR, ST_MISSING_DSH, ST_READY, ST_STARTING,
 };
@@ -92,10 +92,12 @@ fn spawn_injection(window: tauri::WebviewWindow) {
         }
         *last = Some(Instant::now());
     }
+    // 使用新的模块化注入脚本（包含归档 + 右侧侧边栏）
+    let inject_js = assemble_inject_js();
     std::thread::spawn(move || {
         for _ in 0..90 {
             std::thread::sleep(Duration::from_millis(1500));
-            let _ = window.eval(INJECT_JS);
+            let _ = window.eval(&inject_js);
         }
     });
 }
@@ -300,8 +302,8 @@ pub fn run_launcher(app: tauri::AppHandle) {
 
     let lifecycle = supervise_once(&app, state, &settings, &candidate);
     match lifecycle {
-        Lifecycle::Aborted => return,
-        Lifecycle::StartFailed => return,
+        Lifecycle::Aborted => (),
+        Lifecycle::StartFailed => (),
         Lifecycle::Exited(status) if status.success() => {
             // Clean exit — typically the dsh Web UI 关机 button. Keep the app
             // open and offer a restart instead of tearing everything down.
@@ -311,7 +313,6 @@ pub fn run_launcher(app: tauri::AppHandle) {
                 ST_ERROR,
                 "dsh 已正常退出（可能通过 Web 界面关机）。点击「重新启动」可再次拉起。",
             );
-            return;
         }
         Lifecycle::Exited(_) => {
             // dsh was killed / crashed → exit the whole app so the user
