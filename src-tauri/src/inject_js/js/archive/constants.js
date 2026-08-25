@@ -21,4 +21,14 @@
     '<path d="M8 4.9V8l2.4 1.5"/>' +
     '</svg>';
 
+  // 锁标记（封闭挂锁，用于「归档清单」中标记需要从本次归档排除的对话）。
+  // 沿用 dsh 描边风格：stroke=currentColor，由 CSS 控制锁定态配色。
+  var ICON_LOCK =
+    '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<rect x="3.5" y="7" width="9" height="6.2" rx="1.3"/>' +
+    '<path d="M5.3 7V5.4a2.7 2.7 0 0 1 5.4 0V7"/>' +
+    '<circle cx="8" cy="10.1" r="0.85" fill="currentColor" stroke="none"/>' +
+    '</svg>';
+
 

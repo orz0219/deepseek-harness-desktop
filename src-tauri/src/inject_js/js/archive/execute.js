@@ -1,8 +1,9 @@
   // ===== 归档执行 =====
   function onArchiveAll(btn) {
-    getArchiveTargets().then(function (items) {
-      if (!items.length) { btn.setAttribute('aria-label', '没有可归档的对话'); setTimeout(function () { setIdle(btn); }, 1500); return; }
-      showConfirm(items.length, function () { executeArchive(btn, items); });
+    getArchiveTargets().then(function (rows) {
+      if (!rows.length) { btn.setAttribute('aria-label', '没有可归档的对话'); setTimeout(function () { setIdle(btn); }, 1500); return; }
+      // 弹窗内勾选锁定的对话将从本次归档中排除；未锁定项照常归档。
+      showArchiveChecklist(rows, function (selected) { executeArchive(btn, selected); });
     }).catch(function () { btn.setAttribute('aria-label', '读取会话失败'); setTimeout(function () { setIdle(btn); }, 1500); });
   }
 

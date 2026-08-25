@@ -335,13 +335,17 @@ pub struct FileTreeNode {
 ///
 /// 递归读取目录结构，限制深度避免过深。
 /// 默认深度为 3 层。
+///
+/// 必须由前端显式传入当前会话的工作目录（`root` = cwd）。
+/// 过去这里静默回落到 `std::env::current_dir()`：dev 下 Rust 进程 cwd 恰好是
+/// 项目目录（即工作目录）所以“看起来对”，但打包后的 GUI 进程 cwd 是 app 自身
+/// 目录（或 `/`），会导致文件树显示错误且固定的目录、不跟随会话切换。
+/// 因此缺少 root 时直接报错，由前端决定如何提示，避免误导。
 #[tauri::command]
 pub fn get_file_tree(root: Option<String>, depth: Option<u32>) -> Result<FileTreeNode, String> {
-    let dir = root.unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default()
-    });
+    let dir = root
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| "未指定工作目录（cwd），无法加载文件树".to_string())?;
 
     let max_depth = depth.unwrap_or(3);
 

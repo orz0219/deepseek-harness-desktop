@@ -1,11 +1,13 @@
-  function openPreviewModal(path) {
-    // 关闭已存在的弹框
-    var existing = document.getElementById('dsh-rs-preview-modal');
-    if (existing) existing.remove();
+  // 当前正在预览的文件路径（同一时刻只一个预览框；同文件重复命中走短路，不重建/不重算）
+  var currentPreviewPath = null;
 
+  // 构建「文件预览」弹框外壳：只建一次；内容由 renderModalContent 异步填充。
+  // dataset.previewKind='file' 用于与 git diff 弹框区分，避免从 diff 切回同文件时误短路。
+  function buildFilePreviewShell() {
     var modal = document.createElement('div');
     modal.id = 'dsh-rs-preview-modal';
     modal.className = 'dsh-rs-modal';
+    modal.dataset.previewKind = 'file';
     modal.innerHTML =
       '<div class="dsh-rs-modal-content">' +
         '<div class="dsh-rs-modal-header">' +
@@ -21,8 +23,41 @@
         '</div>' +
         '<div class="dsh-rs-modal-resize-handle"></div>' +
       '</div>';
+    return modal;
+  }
 
-    document.body.appendChild(modal);
+  function showPreviewLoadError(msg) {
+    var el = document.getElementById('modal-file-content');
+    if (!el) return;
+    el.innerHTML =
+      '<div class="dsh-rs-empty">' +
+        '<div class="title">无法读取文件</div>' +
+        '<div class="desc">' + msg + '</div>' +
+      '</div>';
+  }
+
+  function openPreviewModal(path) {
+    var modal = document.getElementById('dsh-rs-preview-modal');
+    var isFileModal = !!modal && modal.dataset.previewKind === 'file';
+
+    // 同一文件且已是文件预览弹框：直接短路，避免反复整框重建 / 重算高亮
+    if (isFileModal && currentPreviewPath === path) return;
+
+    // 外壳按需重建（仅当不存在或不是文件预览弹框时）；否则复用外壳、只更新内容区
+    if (!isFileModal) {
+      if (modal) modal.remove();
+      modal = buildFilePreviewShell();
+      document.body.appendChild(modal);
+      initModalResize(modal);
+      document.addEventListener('keydown', function escHandler(e) {
+        if (e.key === 'Escape') {
+          closePreviewModal();
+          document.removeEventListener('keydown', escHandler);
+        }
+      });
+    }
+
+    currentPreviewPath = path;
 
     // 更新路径显示
     var parts = path.split('/');
@@ -31,20 +66,13 @@
     document.getElementById('modal-file-path').innerHTML =
       '<span style="color:#9ca3af">' + escapeHtml(dirPath) + '/</span>' + escapeHtml(fileName);
 
-    // 加载文件内容
+    // 先显示加载态，再异步读取并只替换内容区（不重建外壳）
+    var body = document.getElementById('modal-file-content');
+    if (body) body.innerHTML = '<div class="dsh-rs-loading"><span class="spinner"></span>加载中</div>';
+
     var fileName0 = path.split('/').pop() || path;
     var ext0 = fileName0.split('.').pop().toLowerCase();
     var isImage0 = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'].indexOf(ext0) !== -1;
-
-    function showLoadError(msg) {
-      var el = document.getElementById('modal-file-content');
-      if (!el) return;
-      el.innerHTML =
-        '<div class="dsh-rs-empty">' +
-          '<div class="title">无法读取文件</div>' +
-          '<div class="desc">' + msg + '</div>' +
-        '</div>';
-    }
 
     if (isImage0) {
       // 图片：读取原始字节并编码为 base64，交由 renderModalContent 渲染
@@ -53,7 +81,7 @@
           renderModalContent(path, b64, true);
         })
         .catch(function (e) {
-          showLoadError(e && e.message ? e.message : '读取文件失败');
+          showPreviewLoadError(e && e.message ? e.message : '读取文件失败');
         });
     } else {
       tauriInvoke('read_file_content', { path: path })
@@ -61,20 +89,9 @@
           renderModalContent(path, content, false);
         })
         .catch(function (e) {
-          showLoadError(e && e.message ? e.message : '读取文件失败');
+          showPreviewLoadError(e && e.message ? e.message : '读取文件失败');
         });
     }
-
-    // 支持拖拽调整大小
-    initModalResize(modal);
-
-    // ESC 关闭
-    document.addEventListener('keydown', function escHandler(e) {
-      if (e.key === 'Escape') {
-        closePreviewModal();
-        document.removeEventListener('keydown', escHandler);
-      }
-    });
   }
 
   // 渲染弹框内容
@@ -167,6 +184,8 @@
   window.closePreviewModal = function () {
     var modal = document.getElementById('dsh-rs-preview-modal');
     if (modal) modal.remove();
+    currentPreviewPath = null;
+    if (window.resetPreviewDedup) window.resetPreviewDedup();
   };
 
   // 调整弹框大小

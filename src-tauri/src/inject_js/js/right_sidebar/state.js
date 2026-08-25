@@ -38,13 +38,16 @@
 
     return rpc('session.list', {}).then(function (res) {
       var items = (res && res.result && res.result.value && res.result.value.items) || [];
-      var currentSessionId = getCurrentSessionId();
-      if (currentSessionId) {
-        var session = items.find(function (s) { return s.sessionId === currentSessionId; });
-        if (session && session.cwd) {
-          rsState.currentCwd = session.cwd;
-          return session.cwd;
-        }
+      // 先解析当前会话 id（localStorage 优先），再用它从会话列表取出 cwd。
+      var sid = getCurrentSessionId(items);
+      var session = sid ? items.find(function (s) { return s.sessionId === sid; }) : null;
+      // 兜底：localStorage 为空/失效时，用侧边栏「选中行」的标题反查会话，
+      // 确保总能拿到当前会话的 cwd，而不是回落到进程 cwd（打包后进程 cwd 是
+      // app 自身目录，会显示错误且固定的目录、不跟随会话切换）。
+      if (!session) session = matchSelectedSession(items);
+      if (session && session.cwd) {
+        rsState.currentCwd = session.cwd;
+        return session.cwd;
       }
       return null;
     }).catch(function (e) {
@@ -53,74 +56,95 @@
     });
   }
 
-  // 通过 DOM 追踪当前选中的会话 id。
-  // DOM 追踪是唯一可行的选择：session.list 的 current 字段在桌面端不随当前查看的会话更新，不可靠；
-  // 而侧边栏当前会话项（高亮 / aria-selected）由 DSH 实打实渲染，是可靠来源。
-  function getCurrentSessionId() {
-    // 方法1：从 DOM 中查找被选择的 session（优先）
-    // dsh 的侧边栏会话项通常有 data 属性或特定的 class
-    var selectors = [
-      // 高亮/选中状态的 session 项
+  // 解析「当前正在查看的会话」id。
+  // session.list 的 current 字段在桌面端不随当前查看的会话更新，不可靠；
+  // 因此按以下优先级解析（items 为 session.list 结果，可选，用于校验 id 仍有效）：
+  //   1) harness 持久化在 localStorage 的当前会话 id（最可靠，真实 GUI 实打实写入）
+  //   2) DOM 上的 data 属性（部分 fork/旧版 harness 可能带）
+  //   3) URL 路径 / hash 中的 session id
+  function getCurrentSessionId(items) {
+    // 方法1（最可靠）：harness 把当前选中的会话 id 持久化在 localStorage。
+    try {
+      var stored = localStorage.getItem('dsh.sessions.current');
+      if (stored) {
+        var parsed = JSON.parse(stored);
+        if (parsed && parsed.sessionId) {
+          // 校验该会话仍在列表中（避免陈旧 id 指向已删除会话）
+          if (!items || items.some(function (s) { return s.sessionId === parsed.sessionId; })) {
+            return parsed.sessionId;
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 方法2：DOM data 属性（部分 fork / 旧版 harness 可能带）。
+    var dataSelectors = [
       '[data-session-id].active',
       '[data-session-id][aria-selected="true"]',
       '[data-session-id][data-active="true"]',
       '[data-session-id][data-current="true"]',
-      // dsh 可能使用的 class
       '.session-item.active',
       '.session-item.selected',
       '.session-item.current',
       '.session-row.active',
       '.session-row.selected',
-      // 侧边栏中被选中的项
       '[class*="session"][class*="active"]',
       '[class*="session"][class*="selected"]',
       '[class*="session"][class*="current"]',
-      // 通用高亮项
       '[class*="sidebar"] [class*="active"][data-id]',
       '[class*="sidebar"] [class*="selected"][data-id]',
     ];
-
-    for (var i = 0; i < selectors.length; i++) {
-      var items = document.querySelectorAll(selectors[i]);
-      for (var j = 0; j < items.length; j++) {
-        var el = items[j];
-        // 尝试多种属性获取 session ID
+    for (var i = 0; i < dataSelectors.length; i++) {
+      var nodes = document.querySelectorAll(dataSelectors[i]);
+      for (var j = 0; j < nodes.length; j++) {
+        var el = nodes[j];
         var sid = el.getAttribute('data-session-id') ||
                   el.getAttribute('data-id') ||
                   el.getAttribute('data-session') ||
                   el.getAttribute('data-sid');
         if (sid) return sid;
-
         // 尝试从 href 或 onclick 中提取
         var href = el.getAttribute('href') || '';
-        var match = href.match(/session[=\/]([^&\/]+)/);
-        if (match) return match[1];
+        var m = href.match(/session[=\/]([^&\/]+)/);
+        if (m) return m[1];
       }
     }
 
-    // 方法2：从 localStorage 中获取当前 session ID
-    try {
-      var stored = localStorage.getItem('dsh.sessions.current');
-      if (stored) {
-        var parsed = JSON.parse(stored);
-        if (parsed && parsed.sessionId) return parsed.sessionId;
-      }
-    } catch (e) {}
-
-    // 方法3：从 URL 中提取 session ID
-    var pathname = window.location.pathname;
-    var parts = pathname.split('/');
+    // 方法3：从 URL 路径 / hash 中提取 session ID
+    var parts = (window.location.pathname || '').split('/');
     var sessionIndex = parts.indexOf('session');
     if (sessionIndex !== -1 && sessionIndex + 1 < parts.length) {
       return parts[sessionIndex + 1];
     }
-
-    // 方法4：从 URL hash 中提取
-    var hash = window.location.hash;
-    var hashMatch = hash.match(/session[=\/]([^&\/]+)/);
+    var hashMatch = (window.location.hash || '').match(/session[=\/]([^&\/]+)/);
     if (hashMatch) return hashMatch[1];
 
     return null;
+  }
+
+  // 兜底：找到侧边栏中带 selected 类的会话行，用其标题在 session.list 中反查会话。
+  // 真实 harness 的会话行使用 hash 类名（如 YDXeBa_sessionRow + YDXeBa_selected），
+  // 且没有暴露 session id 的 data 属性，所以无法直接取 id；但选中行的标题与
+  // session.list 条目的 projections.values.title 一致，可用包含匹配反查。
+  function matchSelectedSession(items) {
+    if (!items || !items.length) return null;
+    var row = document.querySelector('[role="treeitem"][class*="selected"]') ||
+              document.querySelector('[class*="sessionRow"][class*="selected"]');
+    if (!row) return null;
+    var titleEl = row.querySelector('[class*="title"]');
+    var text = (titleEl ? titleEl.textContent : row.textContent) || '';
+    text = text.split('\n')[0].trim();
+    if (!text) return null;
+    // 标题可能含截断/附加文案，用包含匹配并取最长命中的，降低碰撞误判。
+    var best = null, bestLen = 0;
+    for (var k = 0; k < items.length; k++) {
+      var t = (items[k].projections && items[k].projections.values && items[k].projections.values.title) || '';
+      if (t && text.indexOf(t) !== -1 && t.length > bestLen) {
+        best = items[k];
+        bestLen = t.length;
+      }
+    }
+    return best;
   }
 
   // 监听 session 切换：通过 DOM 追踪当前会话（见 getCurrentSessionId），

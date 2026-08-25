@@ -30,6 +30,26 @@
     '.dsh-am-ok:hover{filter:brightness(1.05);}' +
     '.dsh-am-delete-ok{background:#b91c1c;color:#ffffff;}' +
     '.dsh-am-delete-ok:hover{filter:brightness(1.08);}' +
+    // ---- 归档清单弹窗（带锁定/排除）----
+    '.dsh-am-card.list{width:460px;max-width:92vw;display:flex;flex-direction:column;max-height:82vh;}' +
+    '.dsh-am-toolbar{display:flex;align-items:center;gap:8px;margin:2px 0 6px;}' +
+    '.dsh-am-mini{height:26px;padding:0 10px;border:1px solid #e5e7eb;background:#ffffff;color:#374151;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;}' +
+    '.dsh-am-mini:hover{background:#f9fafb;border-color:#cbd5e1;}' +
+    '.dsh-am-minisum{font-size:12px;color:#9ca3af;font-variant-numeric:tabular-nums;}' +
+    '.dsh-am-list{flex:1;min-height:0;overflow-y:auto;margin:2px -4px 0;padding:2px 4px;}' +
+    '.dsh-am-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .12s ease;}' +
+    '.dsh-am-row:hover{background:#f9fafb;}' +
+    '.dsh-am-row.locked{background:#fffbeb;}' +
+    '.dsh-am-lock{flex:none;width:28px;height:28px;border:none;border-radius:8px;background:transparent;color:#c4c9d4;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s ease,color .15s ease;}' +
+    '.dsh-am-lock:hover{background:#f1f3f7;color:#6b7280;}' +
+    '.dsh-am-lock.locked{color:#3b6cf6;background:#eef2ff;}' +
+    '.dsh-am-lock svg{display:block;}' +
+    '.dsh-am-rowbody{flex:1;min-width:0;}' +
+    '.dsh-am-rowtitle{font-size:13px;color:#1f2937;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+    '.dsh-am-rowmeta{font-size:11px;color:#9ca3af;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+    '.dsh-am-skip{flex:none;font-size:11px;color:#b45309;background:#fef3c7;border-radius:9px;padding:1px 8px;}' +
+    '.dsh-am-summary{font-size:12px;color:#6b7280;padding:10px 2px 2px;line-height:1.5;}' +
+    '.dsh-am-summary b{color:#374151;font-weight:600;}' +
     // ---- 归档管理器面板（时钟按钮打开）----
     '#dsh-archived-panel{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;background:rgba(17,24,39,.35);}' +
     '.dsh-ap-card{box-sizing:border-box;width:620px;max-width:92vw;max-height:76vh;display:flex;flex-direction:column;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 12px 40px rgba(31,41,55,.18);font-family:inherit;color:#1f2937;overflow:hidden;}' +

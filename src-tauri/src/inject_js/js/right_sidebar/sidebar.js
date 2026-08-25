@@ -208,7 +208,12 @@
     rsState.gitData = null;
     rsState.fileTree = null;
     rsState.currentCwd = null;  // 清除 cwd 缓存
-    switchTab(rsState.activeTab);
+    // 以 DOM 中实际高亮的标签为准决定刷新哪个面板，避免 rsState.activeTab
+    // 与界面高亮偶发不同步时，刷新错误地把视图切到另一个标签（例如在 Git 改动
+    // 里点刷新却跳到文件树）。
+    var activeTabEl = document.querySelector('.dsh-rs-tab.active');
+    var tab = activeTabEl ? activeTabEl.getAttribute('data-tab') : rsState.activeTab;
+    switchTab(tab);
     updateCwdTitle();  // 刷新后重新解析并更新工作目录标题
   };
 
@@ -239,7 +244,7 @@
    window.revealCwd = function () {
      getCurrentCwd().then(function (cwd) {
        if (!cwd) { showRsToast('无法获取当前工作目录'); return; }
-       tauriInvoke('reveal_in_finder', { path: cwd, is_dir: true })
+       tauriInvoke('reveal_in_finder', { path: cwd, isDir: true })
          .then(function () { showRsToast('已在访达中打开'); })
          .catch(function (e) { showRsToast('打开访达失败：' + (e && e.message ? e.message : e)); });
      });
